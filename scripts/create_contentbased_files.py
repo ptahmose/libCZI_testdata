@@ -1,17 +1,22 @@
 """
-This is a utility for preparing files in a folder for usage with CMake's ExternalData-mechanism
-(c.f. https://cmake.org/cmake/help/book/mastering-cmake/chapter/Testing%20With%20CMake%20and%20CTest.html#managing-test-data).
+Utility used to create "content-based filenames" for use with CMake's ExternalData-mechanism
+(c.f. https://cmake.org/cmake/help/book/mastering-cmake/chapter/Testing%20With%20CMake%20and%20CTest.html#managing-test-data)
 
-The synopsis is: prepare_sample_data.py -s <source_directory> -d <destination_directory> -p <pointer_destination_directory>
+What this does is:
+* for all files in the "source directories" list ...
+* calculate the MD5-hash of the file
+* copy the file into a destination folder with the hash as filename
 
-'source_directory' is the folder where the files to be processed are found in. Only files directly in this folder
-are processed (i.e. no sub-folders).
+The synopsis is: create_contentbased_files.py [-s <source_directory>] [-d <destination_directory>] [-v]
 
-For each file md5-checksum is calculated. Then, the file is copied to a file which gets the filename of the hash-code
-in the destination_directory. If the argument destination_directory is not given, this step is not done.
-Next, the hash-code is written into a file with the same name as the original file with ".md5" appended, in the
-directory pointer_destination_directory. Again, if the argument pointer_destination_directory is not given, this
-step is not done.
+Multiple source directories may be given, and the tool will process all of them. If no source directory is not given,
+then [folder-where-this-script-resides]/../CZICheck_Testdata will be used.
+If the destination directory is not given, then [folder-where-this-script-resides]/../ will be used.
+
+The intended use case is:
+* After making any change in the folder "CZICheck_Testdata" (i.e. modify a file, or adding a file)...
+* run this script, and it will update the content of the "MD5"-folder
+* then, then use git to check stuff in and push
 
 """
 import argparse
@@ -60,7 +65,7 @@ class Parameters:
     def get_destination_directory(self):
         return self.__destination_directory
 
-    def get_verbosity(self):
+    def get_verbose_output(self):
         return self.__verbose
 
 
@@ -76,20 +81,42 @@ def hashfile(file_name):
     return hasher.hexdigest()
 
 
-def process_folder(directory_name, parameters):
+def process_folder(directory_name, cmdline_parameters):
     list_of_files = os.listdir(directory_name)
+    number_of_files_copied = 0
     for filename in list_of_files:
         full_filename = os.path.join(directory_name, filename)
         if os.path.isfile(full_filename):
             hash_code = hashfile(full_filename)
             destination_full_filename = os.path.join(parameters.get_destination_directory(), hash_code)
-            print(f"file: {full_filename} hash: {hash_code}")
+            if cmdline_parameters.get_verbose_output():
+                print(f" file: '{full_filename}' hash: {hash_code} -> '{destination_full_filename}'")
+
             shutil.copy(full_filename, destination_full_filename)
+            number_of_files_copied += 1
+
+    return number_of_files_copied
 
 
 parameters = Parameters()
 parameters.parse_commandline()
 
+# print operational parameters on stdout
+print("Source Directories:")
+no = 1
+for source_directory in parameters.get_source_directories():
+    print(f" {no}. : '{source_directory}'")
+print()
+print("Destination Directory:")
+print(f" '{parameters.get_destination_directory()}'")
+print()
+
+total_number_of_files_copied = 0
 for source_directory in parameters.get_source_directories():
     print(f"Processing directory '{source_directory}'")
-    process_folder(source_directory, parameters)
+    total_number_of_files_copied += process_folder(source_directory, parameters)
+
+print()
+print(f"{total_number_of_files_copied} file"
+      f"{'s' if (total_number_of_files_copied>1 or total_number_of_files_copied==0) else ''}"
+      f" copied in total.")
